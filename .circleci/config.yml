@@ -1,0 +1,223 @@
+version: 2.1 
+orbs:
+  aws-cli: circleci/aws-cli@0.1.19
+  slack: circleci/slack@3.4.0
+jobs:
+  update-lambda-playground:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_REGION
+      - run:
+          name: Create Zip
+          command: sh .circleci/compress.sh
+      - run:
+          name: Permission to deploy.sh
+          command: chmod +x .circleci/deploy.sh
+      - run:
+          name: Deploy functions
+          environment:
+            REPLICATION: ""
+          command: sh .circleci/deploy.sh	Monitoring-Transaction-PostReadindAndDecoded-${ENVIRONMENT}
+
+  update-lambda-sand:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_REGION
+      - run:
+          name: Create Zip
+          command: sh .circleci/compress.sh
+      - run: 
+          name: Permission to deploy.sh
+          command: chmod +x .circleci/deploy.sh   
+      - run:
+          name: Deploy functions
+          environment:
+            REPLICATION: ""
+          command: sh .circleci/deploy.sh	Monitoring-Transaction-PostReadindAndDecoded-${ENVIRONMENT}
+
+  deploy-notification-qa:
+    docker:
+      - image: cibuilds/base:latest
+    steps:
+      - slack/notify:
+          channel: deploy-qa
+          color: '#42e2f4'
+          mentions: 'here'
+          message: Do you want to deploy this artifact in qa? go to https://circleci.com/workflow-run/${CIRCLE_WORKFLOW_ID}
+          webhook: ${SLACK_WEBHOOK_DEPLOY_QA}
+  update-lambda-qa:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_REGION
+      - run:
+          name: Create Zip
+          command: sh .circleci/compress.sh
+      - run:
+          name: Permission to deploy.sh
+          command: chmod +x .circleci/deploy.sh
+      - run:
+          name: Deploy functions
+          environment:
+            REPLICATION: ""
+          command: sh .circleci/deploy.sh	Monitoring-Transaction-PostReadindAndDecoded-${ENVIRONMENT}
+
+  deploy-notification-stg:
+    docker:
+      - image: cibuilds/base:latest
+    steps:
+      - slack/notify:
+          channel: deploy-staging
+          color: '#42e2f4'
+          mentions: 'here'
+          message: Do you want to deploy this artifact in staging? go to https://circleci.com/workflow-run/${CIRCLE_WORKFLOW_ID}
+          webhook: ${SLACK_WEBHOOK_DEPLOY_STAGING}
+  update-lambda-stg:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_REGION
+      - run:
+          name: Create Zip
+          command: sh .circleci/compress.sh
+      - run:
+          name: Permission to deploy.sh
+          command: chmod +x .circleci/deploy.sh
+      - run:
+          name: Deploy functions
+          environment:
+            REPLICATION: true
+          command: sh .circleci/deploy.sh	Monitoring-Transaction-PostReadindAndDecoded-${ENVIRONMENT}
+
+  deploy-notification-prod:
+    docker:
+      - image: cibuilds/base:latest
+    steps:
+      - slack/notify:
+          channel: deploy-qa
+          color: '#42e2f4'
+          mentions: 'here'
+          message: Do you want to deploy this artifact in Production? go to https://circleci.com/workflow-run/${CIRCLE_WORKFLOW_ID}
+          webhook: ${SLACK_WEBHOOK_DEPLOY_PRODUCTION}
+  update-lambda-prod:
+    docker:
+      - image: circleci/python:3.7.1
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_REGION
+      - run:
+          name: Create Zip
+          command: sh .circleci/compress.sh
+      - run:
+          name: Permission to deploy.sh
+          command: chmod +x .circleci/deploy.sh
+      - run:
+          name: Deploy functions
+          environment:
+            REPLICATION: true
+          command: sh .circleci/deploy.sh	Monitoring-Transaction-PostReadindAndDecoded-${ENVIRONMENT}
+
+workflows:
+  build-n-deploy:
+    jobs:
+    - update-lambda-playground:
+        context: deploy-play
+        filters:
+          branches:
+            only: /playground.*/
+
+    - update-lambda-sand:
+        context: deploy-sandbox
+        filters:
+          branches:
+            only: master
+
+    - deploy-notification-qa:
+        context: global-piso19
+        requires:
+          - update-lambda-sand
+        filters:
+          branches:
+            only: master
+    - hold-qa:
+          type: approval
+          requires:
+            - deploy-notification-qa
+          filters:
+            branches:
+              only: master
+    - update-lambda-qa:
+        context: deploy-qa
+        requires:
+          - hold-qa
+        filters:
+          branches:
+            only: master
+
+    - deploy-notification-stg:
+        context: global-piso19
+        filters:
+          branches:
+            only: /release.*/
+    - hold-stg:
+        type: approval
+        requires:
+          - deploy-notification-stg
+        filters:
+          branches:
+            only: /release.*/
+    - update-lambda-stg:
+        context: deploy-staging
+        requires:
+          - hold-stg
+        filters:
+          branches:
+            only: /release.*/
+
+    - deploy-notification-prod:
+        context: global-piso19
+        requires:
+          - update-lambda-stg
+        filters:
+          branches:
+            only: /release.*/
+    - hold-prod:
+        type: approval
+        requires:
+          - deploy-notification-prod
+        filters:
+          branches:
+            only: /release.*/
+    - update-lambda-prod:
+        context: deploy-production
+        requires:
+          - hold-prod
+        filters:
+          branches:
+            only: /release.*/
